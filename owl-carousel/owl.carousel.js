@@ -543,12 +543,25 @@ if ( typeof Object.create !== "function" ) {
 
 			base.currentItem += base.options.scrollPerPage === true ? base.options.items : 1;
 			if(base.currentItem > base.maximumItem + (base.options.scrollPerPage == true ? (base.options.items - 1) : 0)){
-				if(base.options.rewindNav === true){
-					base.currentItem = 0;
-					speed = "rewind";
-				} else {
-					base.currentItem = base.maximumItem;
-					return false;
+				if(base.options.cycle === true) {
+					base.$owlItems.last().after(base.$owlItems.first());
+					base.$owlItems = base.$elem.find(".owl-item");
+					base.currentItem -=2;
+					base.transformCycle(base.maximumItem - 1);
+					//hack to give time to finish the first translate with 0 time
+					setTimeout(function(){
+						base.swapSpeed('slideSpeed');
+						base.next();
+					}, 5);
+					return;
+				} else { 
+					if(base.options.rewindNav === true){
+						base.currentItem = 0;
+						speed = "rewind";
+					} else {
+						base.currentItem = base.maximumItem;
+						return false;
+					}
 				}
 			}
 			base.goTo(base.currentItem,speed);
@@ -567,15 +580,39 @@ if ( typeof Object.create !== "function" ) {
 				base.currentItem -= base.options.scrollPerPage === true ? base.options.items : 1;
 			}
 			if(base.currentItem < 0){
-				if(base.options.rewindNav === true){
-					base.currentItem = base.maximumItem;
-					speed = "rewind"
-				} else {
-					base.currentItem =0;
-					return false;
+				if(base.options.cycle === true) {
+					base.$owlItems.first().before(base.$owlItems.last());
+					base.$owlItems = base.$elem.find(".owl-item");
+					base.currentItem +=2;
+					base.transformCycle(1);
+					//hack to give time to finish the first translate with 0 time
+					setTimeout(function(){
+						base.swapSpeed('slideSpeed');
+						base.prev();
+					}, 5);
+					return;
+				} else { 
+					if(base.options.rewindNav === true){
+						base.currentItem = base.maximumItem;
+						speed = "rewind"
+					} else {
+						base.currentItem =0;
+						return false;
+					}
 				}
 			}
 			base.goTo(base.currentItem,speed);
+		},
+
+		transformCycle : function(position){
+			var base = this;
+			var goToPixel = base.positionsInArray[position];
+			if(base.browser.support3d === true){
+				base.swapSpeed(0)
+				base.transition3d(goToPixel);
+			} else {
+				base.css2slide(goToPixel, 0);
+			}
 		},
 
 		goTo : function(position,speed,drag){
@@ -680,7 +717,7 @@ if ( typeof Object.create !== "function" ) {
 					base.checkAp();
 				}
 			}
-			if(typeof base.options.afterMove === "function" && base.prevItem !== base.currentItem) {
+			if(typeof base.options.afterMove === "function" && (base.prevItem !== base.currentItem || base.options.cycle)) {
 				base.options.afterMove.apply(this,[base.$elem]);
 			}
 		},
@@ -928,6 +965,7 @@ if ( typeof Object.create !== "function" ) {
 				
 				locals.offsetX = getTouches(event).x - position.left;
 				locals.offsetY = getTouches(event).y - position.top;
+				locals.cyclePosition = 0;
 
 				swapEvents("on");
 
@@ -963,11 +1001,15 @@ if ( typeof Object.create !== "function" ) {
 					return  base.maximumPixels + base.newRelativeX / 5;
 				}
 
-				base.newPosX = Math.max(Math.min( base.newPosX, minSwipe() ), maxSwipe() );
-				if(base.browser.support3d === true){
-					base.transition3d(base.newPosX);
+				if(base.options.cycle) {
+					cycleDrag(base.newPosX);
 				} else {
-					base.css2move(base.newPosX);
+					base.newPosX = Math.max(Math.min( base.newPosX, minSwipe() ), maxSwipe() );
+					if(base.browser.support3d === true){
+						base.transition3d(base.newPosX);
+					} else {
+						base.css2move(base.newPosX);
+					}
 				}
 			}
 
@@ -1004,6 +1046,37 @@ if ( typeof Object.create !== "function" ) {
 				}
 				swapEvents("off");
 			}
+
+			function cycleDrag(newPosX) {
+				var changed = (locals.cyclePosition * base.itemWidth);
+				if(newPosX > 0)
+					var direction = newPosX + base.itemWidth - changed;
+				else
+					var direction = newPosX - base.itemWidth - changed;
+				if(direction >= 0) {
+					// moving left to right
+					if((newPosX >= changed)|| locals.cyclePosition < 0){
+						base.$owlItems.first().before(base.$owlItems.last());
+						base.$owlItems = base.$elem.find(".owl-item");
+						locals.cyclePosition++;
+					}
+				} else {
+					// moving right to left
+					var countOfItemWidth = changed + base.max();
+					if(Math.abs(newPosX) >= Math.abs(countOfItemWidth) || locals.cyclePosition > 0){
+						base.$owlItems.last().after(base.$owlItems.first());
+						base.$owlItems = base.$elem.find(".owl-item");
+						locals.cyclePosition--;
+					}
+				}
+				newPosX -= locals.cyclePosition * base.itemWidth;
+				if(base.browser.support3d === true){
+					base.transition3d(newPosX);
+				} else {
+					base.css2move(newPosX);
+				}
+			}
+
 			base.$elem.on(base.ev_types["start"], ".owl-wrapper", dragStart); 
 		},
 
@@ -1431,6 +1504,8 @@ if ( typeof Object.create !== "function" ) {
 
 		pagination : true,
 		paginationNumbers : false,
+
+		cycle: false,
 
 		responsive : true,
 		responsiveRefreshRate : 200,
